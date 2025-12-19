@@ -28,7 +28,7 @@ curl -s $mirror/openwrt/patch/generic-24.10/0014-include-netfilter-update-kernel
 
 # add source mirror
 #sed -i '/"@OPENWRT": \[/a\\t\t"https://sources-cdn-openwrt.cooluc.com",' scripts/projectsmirrors.json
-sed -i '/"@OPENWRT": \[/a\\t\t"https://source.cooluc.com",' scripts/projectsmirrors.json
+#sed -i '/"@OPENWRT": \[/a\\t\t"https://source.cooluc.com",' scripts/projectsmirrors.json
 
 # attr no-mold
 [ "$ENABLE_MOLD" = "y" ] && sed -i '/PKG_BUILD_PARALLEL/aPKG_BUILD_FLAGS:=no-mold' feeds/packages/utils/attr/Makefile
