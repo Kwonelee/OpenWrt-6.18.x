@@ -41,7 +41,7 @@ git clone https://$github/sbwml/tools_dwarves tools/dwarves
 sed -i 's/noinitrd/noinitrd mitigations=off/g' target/linux/x86/image/grub-efi.cfg
 
 # default LAN IP
-sed -i "s/192.168.1.1/$LAN/g" package/base-files/files/bin/config_generate
+sed -i "s/192.168.1.1/192.168.5.88/g" package/base-files/files/bin/config_generate
 
 # default password
 if [ -n "$ROOT_PASSWORD" ]; then
