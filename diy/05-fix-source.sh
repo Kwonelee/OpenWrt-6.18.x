@@ -14,14 +14,37 @@ rm -rf package/network/utils/xdp-tools
 git clone https://$github/sbwml/package_network_utils_xdp-tools package/network/utils/xdp-tools
 
 # fix gcc14
-if [ "$gcc" = 14 ] || [ "$gcc" = 15 ]; then
+if [ "$USE_GCC14" = y ] || [ "$USE_GCC15" = y ]; then
     # linux-atm
     rm -rf package/network/utils/linux-atm
     git clone https://$github/sbwml/package_network_utils_linux-atm package/network/utils/linux-atm
+    # glibc
+    # Added the compiler flag -Wno-implicit-function-declaration to suppress
+    # warnings about implicit function declarations during the build process.
+    # This change addresses build issues in environments where some functions
+    # are used without prior declaration.
+    if [ "$ENABLE_GLIBC" = "y" ]; then
+        # perl
+        sed -i "/Target perl/i\TARGET_CFLAGS_PERL += -Wno-implicit-function-declaration -Wno-int-conversion\n" feeds/packages/lang/perl/Makefile
+        sed -i '/HOST_BUILD_PARALLEL/aPKG_BUILD_FLAGS:=no-mold' feeds/packages/lang/perl/Makefile
+        # lucihttp
+        sed -i "/TARGET_CFLAGS/i\TARGET_CFLAGS += -Wno-implicit-function-declaration" feeds/luci/contrib/package/lucihttp/Makefile
+        # rpcd
+        sed -i "/TARGET_LDFLAGS/i\TARGET_CFLAGS += -Wno-implicit-function-declaration" package/system/rpcd/Makefile
+        # ucode-mod-lua
+        sed -i "/Build\/Configure/i\TARGET_CFLAGS += -Wno-implicit-function-declaration" feeds/luci/contrib/package/ucode-mod-lua/Makefile
+        # luci-base
+        sed -i "s/-DNDEBUG/-DNDEBUG -Wno-implicit-function-declaration/g" feeds/luci/modules/luci-base/src/Makefile
+        # uhttpd
+        sed -i "/Package\/uhttpd\/install/i\TARGET_CFLAGS += -Wno-implicit-function-declaration\n" package/network/services/uhttpd/Makefile
+        # shadow
+        sed -i '/TARGET_LDFLAGS/d' feeds/packages/utils/shadow/Makefile
+        sed -i 's/libxcrypt/openssl/g' feeds/packages/utils/shadow/Makefile
+    fi
 fi
 
 # fix gcc-15
-if [ "$gcc" = 15 ]; then
+if [ "$USE_GCC15" = y ]; then
     sed -i '/TARGET_CFLAGS/ s/$/ -Wno-error=unterminated-string-initialization/' package/libs/mbedtls/Makefile
     # elfutils
     curl -s $mirror/openwrt/patch/openwrt-6.x/gcc-15/elfutils/901-backends-fix-string-initialization-error-on-gcc15.patch > package/libs/elfutils/patches/901-backends-fix-string-initialization-error-on-gcc15.patch
@@ -34,7 +57,7 @@ if [ "$gcc" = 15 ]; then
 fi
 
 # fix gcc-15.0.1 C23
-if [ "$gcc" = 15 ]; then
+if [ "$USE_GCC15" = y ]; then
     # gmp
     mkdir -p package/libs/gmp/patches
     curl -s $mirror/openwrt/patch/openwrt-6.x/gcc-15-c23/gmp/001-fix-build-with-gcc-15.patch > package/libs/gmp/patches/001-fix-build-with-gcc-15.patch
@@ -96,10 +119,6 @@ if [ "$gcc" = 15 ]; then
     sed -i '/Build\/InstallDev/i TARGET_CFLAGS += -std=gnu17\n' feeds/packages/sound/shine/Makefile
     # jq
     sed -i '/CONFIGURE_ARGS/i TARGET_CFLAGS += -std=gnu17\n' feeds/packages/utils/jq/Makefile
-    # coova-chilli - fix gcc 15 c23
-    sed -i '/TARGET_CFLAGS/s/$/ -std=gnu17/' feeds/packages/net/coova-chilli/Makefile
-    # oniguruma
-    sed -i '/CONFIGURE_ARGS/i TARGET_CFLAGS += -std=gnu17\n' feeds/packages/libs/oniguruma/Makefile
 fi
 
 # ksmbd luci
