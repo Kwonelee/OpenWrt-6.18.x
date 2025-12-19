@@ -10,6 +10,13 @@ env:
   REPO_URL: https://github.com/openwrt/openwrt
   CONFIG_FILE: .config
   gcc: 15
+  ENABLE_MOLD: y
+  ROOT_PASSWORD: password
+  ENABLE_UHTTPD: n
+  version: rc2
+  ENABLE_GLIBC: y
+  ENABLE_LTO: y
+  platform: bcm53xx
   mirror: https://init2.cooluc.com
   gitea: git.cooluc.com
   # mirror: https://init2.cooluc.com
