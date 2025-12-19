@@ -14,7 +14,7 @@ env:
   ROOT_PASSWORD: password
   ENABLE_UHTTPD: n
   version: rc2
-  ENABLE_GLIBC: y
+  ENABLE_GLIBC: n
   ENABLE_LTO: y
   platform: bcm53xx
   mirror: https://init2.cooluc.com
