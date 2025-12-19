@@ -74,12 +74,11 @@ jobs:
         df -hT $PWD
         echo "开始克隆源代码仓库..."
         git -c advice.detachedHead=false clone --depth=1 --branch "${{ matrix.REPO_BRANCH }}" --single-branch --quiet $REPO_URL openwrt
-        # git clone --depth=1 --quiet -b main $REPO_URL openwrt_snap
-        git clone --depth=1 --quiet -b master https://github.com/immortalwrt/immortalwrt openwrt_snap
+        git clone --depth=1 --quiet -b main $REPO_URL openwrt_snap
         
         echo "正在进行源代码处理..."
         rm -rf ${{ env.WORKDIR }}/workdir/openwrt/package/boot/{rkbin,uboot-rockchip,arm-trusted-firmware-rockchip}
-        cp -rf ${{ env.WORKDIR }}/workdir/openwrt_snap/package/boot/{uboot-rockchip,arm-trusted-firmware-rockchip} ${{ env.WORKDIR }}/workdir/openwrt/package/boot/
+        cp -rf ${{ env.WORKDIR }}/workdir/openwrt_snap/package/boot/{rkbin,uboot-rockchip,arm-trusted-firmware-rockchip} ${{ env.WORKDIR }}/workdir/openwrt/package/boot/
         rm -rf ${{ env.WORKDIR }}/workdir/openwrt/target/linux/{rockchip,generic}
         cp -rf ${{ env.WORKDIR }}/workdir/openwrt_snap/target/linux/{rockchip,generic} ${{ env.WORKDIR }}/workdir/openwrt/target/linux/
         rm -rf ${{ env.WORKDIR }}/workdir/openwrt/package/firmware/linux-firmware
