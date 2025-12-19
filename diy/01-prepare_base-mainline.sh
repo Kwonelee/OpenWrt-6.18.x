@@ -6,12 +6,12 @@
 git clone https://$github/sbwml/autocore-arm -b openwrt-24.10 package/system/autocore
 
 # rockchip - target - r4s/r5s only
-rm -rf target/linux/rockchip
-if [ "$(whoami)" = "sbwml" ]; then
-    git clone https://$gitea/sbwml/target_linux_rockchip-6.x target/linux/rockchip -b v6.18
-else
-    git clone https://"$git_name":"$git_password"@$gitea/sbwml/target_linux_rockchip-6.x target/linux/rockchip -b v6.18
-fi
+#rm -rf target/linux/rockchip
+#if [ "$(whoami)" = "sbwml" ]; then
+    #git clone https://$gitea/sbwml/target_linux_rockchip-6.x target/linux/rockchip -b v6.18
+#else
+    #git clone https://"$git_name":"$git_password"@$gitea/sbwml/target_linux_rockchip-6.x target/linux/rockchip -b v6.18
+#fi
 
 # bpf-headers - 6.18
 sed -ri "s/(PKG_PATCHVER:=)[^\"]*/\16.18/" package/kernel/bpf-headers/Makefile
@@ -41,19 +41,19 @@ sed -ie 's/^\(.\).*vermagic$/\1cp $(TOPDIR)\/.vermagic $(LINUX_DIR)\/.vermagic/'
 grep HASH include/kernel-6.18 | awk -F'HASH-' '{print $2}' | awk '{print $1}' | md5sum | awk '{print $1}' > .vermagic
 
 # kernel generic patches
-curl -s $mirror/openwrt/patch/kernel-6.18/openwrt/linux-6.18-target-linux-generic.patch | patch -p1
-local_kernel_version=$(sed -n 's/^LINUX_KERNEL_HASH-\([0-9.]\+\) = .*/\1/p' include/kernel-6.18)
-release_kernel_version=$(curl -sL https://raw.githubusercontent.com/sbwml/r4s_build_script/master/tags/kernel-6.18 | sed -n 's/^LINUX_KERNEL_HASH-\([0-9.]\+\) = .*/\1/p')
-if [ "$local_kernel_version" = "$release_kernel_version" ] && [ -z "$git_password" ] && [ "$(whoami)" != "sbwml" ]; then
-    git clone https://$github/sbwml/target_linux_generic -b openwrt-24.10 target/linux/generic-6.18 --depth=1
-else
-    if [ "$(whoami)" = "sbwml" ]; then
-        git clone https://$gitea/sbwml/target_linux_generic -b openwrt-24.10 target/linux/generic-6.18 --depth=1
-    else
-        git clone https://"$git_name":"$git_password"@$gitea/sbwml/target_linux_generic -b openwrt-24.10 target/linux/generic-6.18 --depth=1
-    fi
-fi
-cp -a target/linux/generic-6.18/* target/linux/generic
+#curl -s $mirror/openwrt/patch/kernel-6.18/openwrt/linux-6.18-target-linux-generic.patch | patch -p1
+#local_kernel_version=$(sed -n 's/^LINUX_KERNEL_HASH-\([0-9.]\+\) = .*/\1/p' include/kernel-6.18)
+#release_kernel_version=$(curl -sL https://raw.githubusercontent.com/sbwml/r4s_build_script/master/tags/kernel-6.18 | sed -n 's/^LINUX_KERNEL_HASH-\([0-9.]\+\) = .*/\1/p')
+#if [ "$local_kernel_version" = "$release_kernel_version" ] && [ -z "$git_password" ] && [ "$(whoami)" != "sbwml" ]; then
+    #git clone https://$github/sbwml/target_linux_generic -b openwrt-24.10 target/linux/generic-6.18 --depth=1
+#else
+    #if [ "$(whoami)" = "sbwml" ]; then
+        #git clone https://$gitea/sbwml/target_linux_generic -b openwrt-24.10 target/linux/generic-6.18 --depth=1
+    #else
+        #git clone https://"$git_name":"$git_password"@$gitea/sbwml/target_linux_generic -b openwrt-24.10 target/linux/generic-6.18 --depth=1
+    #fi
+#fi
+#cp -a target/linux/generic-6.18/* target/linux/generic
 
 # kernel modules
 rm -rf package/kernel/linux
@@ -203,8 +203,8 @@ if [ "$platform" = "rk3399" ] || [ "$platform" = "rk3568" ]; then
 fi
 
 # emmc-install
-if [ "$platform" = "rk3568" ] || [ "$platform" = "rk3576" ]; then
-    mkdir -p files/sbin
-    curl -so files/sbin/emmc-install $mirror/openwrt/files/sbin/emmc-install
-    chmod 755 files/sbin/emmc-install
-fi
+#if [ "$platform" = "rk3568" ] || [ "$platform" = "rk3576" ]; then
+    #mkdir -p files/sbin
+    #curl -so files/sbin/emmc-install $mirror/openwrt/files/sbin/emmc-install
+    #chmod 755 files/sbin/emmc-install
+#fi
