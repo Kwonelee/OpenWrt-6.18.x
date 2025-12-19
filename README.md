@@ -1,4 +1,4 @@
-# OpenWrt-6.12.x
+# OpenWrt-6.18.x
 
 # 🎉 Thanks
 - [quickwrt](https://github.com/orgs/QuickWrt/repositories) ； [default-settings](https://github.com/Kwonelee/default-settings) ； [luci-theme-argon](https://github.com/Kwonelee/luci-theme-argon)
