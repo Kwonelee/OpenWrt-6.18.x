@@ -9,7 +9,7 @@ on:
 env:
   REPO_URL: https://github.com/openwrt/openwrt
   CONFIG_FILE: .config
-  gcc: 15
+  USE_GCC15: y
   ENABLE_MOLD: y
   ROOT_PASSWORD: password
   ENABLE_UHTTPD: n
