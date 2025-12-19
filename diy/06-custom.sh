@@ -46,8 +46,3 @@ cp -f $GITHUB_WORKSPACE/configfiles/uboot-rockchip/station-m2-rk3566_defconfig p
 # 复制dts到files/arch/arm64/boot/dts/rockchip
 mkdir -p target/linux/rockchip/files/arch/arm64/boot/dts/rockchip
 cp -f $GITHUB_WORKSPACE/configfiles/dts/rk3566-roc-pc.dts target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-
-# 测试测试
-rm -rf target/linux/generic/backport-6.12/831-01-v6.13-regulator-Add-of_regulator_get_optional-for-pure-DT.patch
-rm -rf target/linux/generic/backport-6.12/831-02-v6.13-regulator-Add-devres-version-of-of_regulator_get_optional.patch
-rm -rf target/linux/generic/backport-6.12/831-03-v6.15-regulator-Add-devm_-of_regulator_get.patch
