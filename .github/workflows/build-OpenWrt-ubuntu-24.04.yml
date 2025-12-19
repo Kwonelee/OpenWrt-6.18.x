@@ -1,0 +1,209 @@
+name: Build OpenWrt ubuntu 24.04
+
+on:
+  repository_dispatch:
+  workflow_dispatch:
+  # schedule:
+   # - cron: 40 15 * * 3
+
+env:
+  REPO_URL: https://github.com/openwrt/openwrt
+  CONFIG_FILE: .config
+  gcc: 15
+  mirror: https://raw.githubusercontent.com/Kwonelee/OpenBox-6.12/2025-11-27
+  gitea: git.cooluc.com
+  # mirror: https://init2.cooluc.com
+  # gitea2: gitea.kejizero.xyz
+  github: github.com
+  UPLOAD_BIN_DIR: true
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        REPO_BRANCH:
+          - v24.10.5
+        ARCHITECTURE:
+          - armv8
+        os:
+          - ubuntu-24.04
+
+      fail-fast: false
+
+    steps:
+    - name: 合并磁盘
+      uses: sbwml/actions@free-disk
+
+    - name: 准备完成
+      uses: actions/checkout@main
+
+    - name: 创建目录设置变量
+      run: |
+        mkdir -p ${GITHUB_WORKSPACE}/workdir
+        chmod 755 ${GITHUB_WORKSPACE}/workdir
+        echo "WORKDIR=$PWD" >> $GITHUB_ENV
+        sudo timedatectl set-timezone 'Asia/Shanghai'
+
+    - name: 检查服务器配置
+      run: |
+        echo -e "\n\e[1;32mCPU:\e[0m"
+        echo "$(grep 'model name' /proc/cpuinfo | head -1 | awk -F ': ' '{print $2}') ($(grep 'cpu MHz' /proc/cpuinfo | head -1 | awk -F ': ' '{print $2}')MHz) x $(grep processor /proc/cpuinfo  | wc -l)"
+        echo -e "\n\e[1;32mMemory:\e[0m"
+        free -h
+        echo -e "\n\e[1;32mStorage:\e[0m"
+        df -Th / /mnt
+        echo -e "\n\e[1;32mSystem:\e[0m"
+        lsb_release -a
+        echo -e "\n\e[1;32mKernel:\e[0m"
+        uname -a
+        echo
+
+    - name: 初始化编译环境
+      uses: sbwml/actions@openwrt-build-setup
+
+    - name: 安装 LLVM
+      uses: sbwml/actions@install-llvm
+
+    - name: 克隆源码
+      working-directory: ${{ env.WORKDIR }}/workdir
+      run: |
+        df -hT $PWD
+        echo "开始克隆源代码仓库..."
+        git -c advice.detachedHead=false clone --depth=1 --branch "${{ matrix.REPO_BRANCH }}" --single-branch --quiet $REPO_URL openwrt
+        # git clone --depth=1 --quiet -b main $REPO_URL openwrt_snap
+        git clone --depth=1 --quiet -b master https://github.com/immortalwrt/immortalwrt openwrt_snap
+        
+        echo "正在进行源代码处理..."
+        rm -rf ${{ env.WORKDIR }}/workdir/openwrt/package/boot/{rkbin,uboot-rockchip,arm-trusted-firmware-rockchip}
+        cp -rf ${{ env.WORKDIR }}/workdir/openwrt_snap/package/boot/{uboot-rockchip,arm-trusted-firmware-rockchip} ${{ env.WORKDIR }}/workdir/openwrt/package/boot/
+        rm -rf ${{ env.WORKDIR }}/workdir/openwrt/target/linux/{rockchip,generic}
+        cp -rf ${{ env.WORKDIR }}/workdir/openwrt_snap/target/linux/{rockchip,generic} ${{ env.WORKDIR }}/workdir/openwrt/target/linux/
+        rm -rf ${{ env.WORKDIR }}/workdir/openwrt/package/firmware/linux-firmware
+        cp -rf ${{ env.WORKDIR }}/workdir/openwrt_snap/package/firmware/linux-firmware ${{ env.WORKDIR }}/workdir/openwrt/package/firmware/
+        
+        echo "替换feeds.conf.default..."
+        cp -rf ${{ github.workspace }}/armv8/feeds.conf.default ${{ env.WORKDIR }}/workdir/openwrt/feeds.conf.default
+        
+        echo "移除多余文件..."
+        rm -rf ${{ env.WORKDIR }}/workdir/openwrt_snap
+        
+        ln -sf ${{ env.WORKDIR }}/workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
+    - name: 缓存构建动作
+      uses: klever1988/cachewrtbuild@main
+      with:
+        ccache: 'true'
+        mixkey: ${{ matrix.os }}-${{ matrix.ARCHITECTURE }}-${{ matrix.REPO_BRANCH }}
+        prefix: ${{ github.workspace }}/openwrt
+
+    - name: 更新 feeds
+      run: cd openwrt && ./scripts/feeds update -a
+
+    - name: 安装 feeds
+      run: cd openwrt && ./scripts/feeds install -a
+
+    - name: 加载自定义配置
+      env:
+        CONFIG_FILE_PATH: ${{ matrix.ARCHITECTURE }}/${{ env.CONFIG_FILE }}
+      run: |
+        # [ -e files ] && mv files openwrt/files
+        [ -e $CONFIG_FILE_PATH ] && mv $CONFIG_FILE_PATH openwrt/$CONFIG_FILE
+        chmod +x diy/*.sh
+        cd openwrt
+        $GITHUB_WORKSPACE/diy/00-prepare_base.sh
+        $GITHUB_WORKSPACE/diy/01-prepare_base-mainline.sh
+        $GITHUB_WORKSPACE/diy/02-prepare_package.sh
+        $GITHUB_WORKSPACE/diy/03-convert_translation.sh
+        $GITHUB_WORKSPACE/diy/04-fix_kmod.sh
+        $GITHUB_WORKSPACE/diy/05-fix-source.sh
+        $GITHUB_WORKSPACE/diy/06-custom.sh
+
+    - name: 下载软件包
+      id: package
+      run: |
+        cd openwrt
+        make defconfig
+        make download -j8
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
+
+    - name: 编译固件
+      id: compile
+      run: |
+        cd openwrt
+        echo -e "$(nproc) thread compile"
+        make -j$(nproc) || make -j1 || make -j1 V=s
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        echo "status=success" >> ${GITHUB_OUTPUT}
+
+    - name: 检查磁盘空间
+      if: (!cancelled())
+      run: df -hT
+
+    - name: 上传 bin 文件夹
+      uses: actions/upload-artifact@main
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      with:
+        name: OpenWrt_bin${{ env.FILE_DATE }}
+        path: openwrt/bin
+
+    - name: 整理固件文件
+      id: organize
+      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      run: |
+        cd openwrt/bin/targets/*/*
+        rm -rf packages
+        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+        echo "status=success" >> ${GITHUB_OUTPUT}
+
+    - name: 上传固件目录
+      uses: actions/upload-artifact@main
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: OpenWrt_firmware${{ env.FILE_DATE }}
+        path: ${{ env.FIRMWARE }}
+
+    - name: 生成发布标签
+      id: tag
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
+      run: |
+        echo "release_tag=$(date +"%Y.%m.%d-%H.%M")-${{ matrix.ARCHITECTURE }}" >> ${GITHUB_OUTPUT}
+        touch release.txt
+        echo "
+        🖥️ Architecture: rockchip-${{ matrix.ARCHITECTURE }}
+
+        🔀 Branch: ${{ matrix.REPO_BRANCH }}
+
+        📂 Source Code: ${{ env.REPO_URL }}
+
+        🏃 Runs On: ${{ matrix.os }}
+
+        🕒 Compilation Time: $(date +"%Y年%m月%d日%H时%M分") " >> release.txt
+        echo "status=success" >> ${GITHUB_OUTPUT}
+
+    - name: 自动发布固件到 Releases
+      uses: softprops/action-gh-release@v2
+      if: steps.tag.outputs.status == 'success' && !cancelled()
+      with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        body_path: release.txt
+        files: |
+          ${{ env.FIRMWARE }}/*station-m2-squashfs-sysupgrade.img.gz
+
+    - name: 删除运行记录
+      uses: Mattraks/delete-workflow-runs@main
+      with:
+        retain_days: 1
+        keep_minimum_runs: 1
+        token: ${{ env.GITHUB_TOKEN }}
+
+    - name: 删除自动发布的旧固件
+      uses: dev-drprasad/delete-older-releases@master
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      with:
+        keep_latest: 15
+        delete_tags: true
