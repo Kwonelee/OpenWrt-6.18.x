@@ -1,17 +1,68 @@
 #!/bin/bash -e
 
 # Rockchip - rkbin & u-boot
-#rm -rf package/boot/rkbin package/boot/uboot-rockchip package/boot/arm-trusted-firmware-rockchip
-#git clone -b openwrt-24.10 https://zhao:$git_password@$gitea/zhao/uboot-rockchip package/boot/uboot-rockchip
-#git clone -b openwrt-24.10 https://zhao:$git_password@$gitea/zhao/arm-trusted-firmware-rockchip package/boot/arm-trusted-firmware-rockchip
+rm -rf package/boot/rkbin package/boot/uboot-rockchip package/boot/arm-trusted-firmware-rockchip
+if [ "$platform" = "rk3399" ]; then
+    git clone https://$github/sbwml/package_boot_uboot-rockchip package/boot/uboot-rockchip -b v2023.04
+    git clone https://$github/sbwml/arm-trusted-firmware-rockchip package/boot/arm-trusted-firmware-rockchip -b 0419
+else
+    git clone https://$github/sbwml/package_boot_uboot-rockchip package/boot/uboot-rockchip
+    git clone https://$github/sbwml/arm-trusted-firmware-rockchip package/boot/arm-trusted-firmware-rockchip
+fi
 
-# Generic Patch
+# patch source
 curl -s $mirror/openwrt/patch/generic-24.10/0001-tools-add-upx-tools.patch | patch -p1
-curl -s $mirror/openwrt/patch/generic-24.10/0001-kernel-update-Config-kernel.in-for-Linux-6.12-support.patch | patch -p1
 curl -s $mirror/openwrt/patch/generic-24.10/0002-rootfs-add-upx-compression-support.patch | patch -p1
 curl -s $mirror/openwrt/patch/generic-24.10/0003-rootfs-add-r-w-permissions-for-UCI-configuration-fil.patch | patch -p1
 curl -s $mirror/openwrt/patch/generic-24.10/0004-rootfs-Add-support-for-local-kmod-installation-sourc.patch | patch -p1
-curl -s $mirror/openwrt/patch/generic-24.10/0013-kernel-add-olddefconfig-before-compilemodules.patch | patch -p1
+curl -s $mirror/openwrt/patch/generic-24.10/0005-kernel-Add-support-for-llvm-clang-compiler.patch | patch -p1
+curl -s $mirror/openwrt/patch/generic-24.10/0006-build-kernel-add-out-of-tree-kernel-config.patch | patch -p1
+curl -s $mirror/openwrt/patch/generic-24.10/0007-include-kernel-add-miss-config-for-linux-6.11.patch | patch -p1
+curl -s $mirror/openwrt/patch/generic-24.10/0008-meson-add-platform-variable-to-cross-compilation-fil.patch | patch -p1
+curl -s $mirror/openwrt/patch/generic-24.10/0009-kernel-add-legacy-cgroup-v1-memory-controller.patch | patch -p1
+curl -s $mirror/openwrt/patch/generic-24.10/0010-kernel-add-PREEMPT_RT-support-for-aarch64-x86_64.patch | patch -p1
+#curl -s $mirror/openwrt/patch/generic-24.10/0011-tools-squashfs4-enable-zstd-compression-support.patch | patch -p1
+#curl -s $mirror/openwrt/patch/generic-24.10/0012-config-include-image-add-support-for-squashfs-zstd-c.patch | patch -p1
+curl -s $mirror/openwrt/patch/generic-24.10/0013-include-kernel-Always-collect-module-symvers.patch | patch -p1
+curl -s $mirror/openwrt/patch/generic-24.10/0014-include-netfilter-update-kernel-config-options-for-l.patch | patch -p1
+
+# add source mirror
+#sed -i '/"@OPENWRT": \[/a\\t\t"https://sources-cdn-openwrt.cooluc.com",' scripts/projectsmirrors.json
+sed -i '/"@OPENWRT": \[/a\\t\t"https://source.cooluc.com",' scripts/projectsmirrors.json
+
+# attr no-mold
+[ "$ENABLE_MOLD" = "y" ] && sed -i '/PKG_BUILD_PARALLEL/aPKG_BUILD_FLAGS:=no-mold' feeds/packages/utils/attr/Makefile
+
+# dwarves 1.25
+rm -rf tools/dwarves
+git clone https://$github/sbwml/tools_dwarves tools/dwarves
+
+# x86 - disable mitigations
+sed -i 's/noinitrd/noinitrd mitigations=off/g' target/linux/x86/image/grub-efi.cfg
+
+# default LAN IP
+sed -i "s/192.168.1.1/$LAN/g" package/base-files/files/bin/config_generate
+
+# default password
+if [ -n "$ROOT_PASSWORD" ]; then
+    # sha256 encryption
+    default_password=$(openssl passwd -5 $ROOT_PASSWORD)
+    sed -i "s|^root:[^:]*:|root:${default_password}:|" package/base-files/files/etc/shadow
+fi
+
+# Use nginx instead of uhttpd
+if [ "$ENABLE_UHTTPD" != "y" ]; then
+    sed -i 's/+uhttpd /+luci-nginx /g' feeds/luci/collections/luci/Makefile
+    sed -i 's/+uhttpd-mod-ubus //' feeds/luci/collections/luci/Makefile
+    sed -i 's/+uhttpd /+luci-nginx /g' feeds/luci/collections/luci-light/Makefile
+    sed -i "s/+luci /+luci-nginx /g" feeds/luci/collections/luci-ssl-openssl/Makefile
+    sed -i "s/+luci /+luci-nginx /g" feeds/luci/collections/luci-ssl/Makefile
+    if [ "$version" = "dev" ] || [ "$version" = "rc2" ]; then
+        sed -i 's/+uhttpd +uhttpd-mod-ubus /+luci-nginx /g' feeds/packages/net/wg-installer/Makefile
+        sed -i '/uhttpd-mod-ubus/d' feeds/luci/collections/luci-light/Makefile
+        sed -i 's/+luci-nginx \\$/+luci-nginx/' feeds/luci/collections/luci-light/Makefile
+    fi
+fi
 
 # Realtek driver - R8168 & R8125 & R8126 & R8152 & R8101 & r8127
 rm -rf package/kernel/{r8168,r8101,r8125,r8126,r8127}
@@ -25,40 +76,37 @@ git clone https://$github/sbwml/package_kernel_r8127 package/kernel/r8127
 # GCC Optimization level -O3
 curl -s $mirror/openwrt/patch/target-modify_for_aarch64_x86_64.patch | patch -p1
 
-# Dwarves 1.25
-rm -rf tools/dwarves
-git clone https://$github/sbwml/tools_dwarves tools/dwarves
-
-# X86 - disable mitigations
-sed -i 's/noinitrd/noinitrd mitigations=off/g' target/linux/x86/image/grub-efi.cfg
-
-# Default LAN IP
-sed -i "s/192.168.1.1/192.168.5.100/g" package/base-files/files/bin/config_generate
-
-# Default Hostname
-#sed -i 's/OpenWrt/ZeroWrt/' package/base-files/files/bin/config_generate
-
-# Default Password
-default_password=$(openssl passwd -5 password)
-sed -i "s|^root:[^:]*:|root:${default_password}:|" package/base-files/files/etc/shadow
-
-# Use nginx instead of uhttpd
-sed -i 's/+uhttpd /+luci-nginx /g' feeds/luci/collections/luci/Makefile
-sed -i 's/+uhttpd-mod-ubus //' feeds/luci/collections/luci/Makefile
-sed -i 's/+uhttpd /+luci-nginx /g' feeds/luci/collections/luci-light/Makefile
-sed -i "s/+luci /+luci-nginx /g" feeds/luci/collections/luci-ssl-openssl/Makefile
-sed -i "s/+luci /+luci-nginx /g" feeds/luci/collections/luci-ssl/Makefile
-sed -i 's/+uhttpd +uhttpd-mod-ubus /+luci-nginx /g' feeds/packages/net/wg-installer/Makefile
-sed -i '/uhttpd-mod-ubus/d' feeds/luci/collections/luci-light/Makefile
-sed -i 's/+luci-nginx \\$/+luci-nginx/' feeds/luci/collections/luci-light/Makefile
-
-# Libubox
+# libubox
 sed -i '/TARGET_CFLAGS/ s/$/ -Os/' package/libs/libubox/Makefile
 
-# Fstools
+# DPDK & NUMACTL
+mkdir -p package/new/{dpdk/patches,numactl}
+curl -s $mirror/openwrt/patch/dpdk/dpdk/Makefile > package/new/dpdk/Makefile
+curl -s $mirror/openwrt/patch/dpdk/dpdk/Config.in > package/new/dpdk/Config.in
+curl -s $mirror/openwrt/patch/dpdk/dpdk/patches/010-dpdk_arm_build_platform_fix.patch > package/new/dpdk/patches/010-dpdk_arm_build_platform_fix.patch
+curl -s $mirror/openwrt/patch/dpdk/dpdk/patches/201-r8125-add-r8125-ethernet-poll-mode-driver.patch > package/new/dpdk/patches/201-r8125-add-r8125-ethernet-poll-mode-driver.patch
+curl -s $mirror/openwrt/patch/dpdk/numactl/Makefile > package/new/numactl/Makefile
+
+# IF USE GLIBC
+if [ "$ENABLE_GLIBC" = "y" ]; then
+    # musl-libc
+    git clone https://$gitea/sbwml/package_libs_musl-libc package/libs/musl-libc
+    # glibc-common
+    curl -s $mirror/openwrt/patch/glibc/glibc-common.patch | patch -p1
+    # glibc-common - locale data
+    mkdir -p package/libs/toolchain/glibc-locale
+    curl -Lso package/libs/toolchain/glibc-locale/locale-archive https://github.com/sbwml/r4s_build_script/releases/download/locale/locale-archive
+    [ "$?" -ne 0 ] && echo -e "${RED_COLOR} Locale file download failed... ${RES}"
+    # GNU LANG
+    mkdir package/base-files/files/etc/profile.d
+    echo 'export LANG="en_US.UTF-8" I18NPATH="/usr/share/i18n"' > package/base-files/files/etc/profile.d/sys_locale.sh
+    # build - drop `--disable-profile`
+    sed -i "/disable-profile/d" toolchain/glibc/common.mk
+fi
+
+# fstools
 rm -rf package/system/fstools
 git clone https://$github/sbwml/package_system_fstools -b openwrt-24.10 package/system/fstools
-
 # util-linux
 rm -rf package/utils/util-linux
 git clone https://$github/sbwml/package_utils_util-linux -b openwrt-24.10 package/utils/util-linux
@@ -66,31 +114,33 @@ git clone https://$github/sbwml/package_utils_util-linux -b openwrt-24.10 packag
 # Shortcut Forwarding Engine
 git clone https://$gitea/sbwml/shortcut-fe package/new/shortcut-fe
 
-### Patch FireWall 4 ###
-# firewall4
-sed -i 's|$(PROJECT_GIT)/project|https://github.com/openwrt|g' package/network/config/firewall4/Makefile
-mkdir -p package/network/config/firewall4/patches
-# fix ct status dnat
-curl -s $mirror/openwrt/patch/firewall4/firewall4_patches/990-unconditionally-allow-ct-status-dnat.patch > package/network/config/firewall4/patches/990-unconditionally-allow-ct-status-dnat.patch
-# fullcone
-curl -s $mirror/openwrt/patch/firewall4/firewall4_patches/999-01-firewall4-add-fullcone-support.patch > package/network/config/firewall4/patches/999-01-firewall4-add-fullcone-support.patch
-# bcm fullcone
-curl -s $mirror/openwrt/patch/firewall4/firewall4_patches/999-02-firewall4-add-bcm-fullconenat-support.patch > package/network/config/firewall4/patches/999-02-firewall4-add-bcm-fullconenat-support.patch
-# kernel version
-curl -s $mirror/openwrt/patch/firewall4/firewall4_patches/002-fix-fw4.uc-adept-kernel-version-type-of-x.x.patch > package/network/config/firewall4/patches/002-fix-fw4.uc-adept-kernel-version-type-of-x.x.patch
-# fix flow offload
-curl -s $mirror/openwrt/patch/firewall4/firewall4_patches/001-fix-fw4-flow-offload.patch > package/network/config/firewall4/patches/001-fix-fw4-flow-offload.patch
-# add custom nft command support
-curl -s $mirror/openwrt/patch/firewall4/100-openwrt-firewall4-add-custom-nft-command-support.patch | patch -p1
-# libnftnl
-mkdir -p package/libs/libnftnl/patches
-curl -s $mirror/openwrt/patch/firewall4/libnftnl/0001-libnftnl-add-fullcone-expression-support.patch > package/libs/libnftnl/patches/0001-libnftnl-add-fullcone-expression-support.patch
-curl -s $mirror/openwrt/patch/firewall4/libnftnl/0002-libnftnl-add-brcm-fullcone-support.patch > package/libs/libnftnl/patches/0002-libnftnl-add-brcm-fullcone-support.patch
-# nftables
-mkdir -p package/network/utils/nftables/patches
-curl -s $mirror/openwrt/patch/firewall4/nftables/0001-nftables-add-fullcone-expression-support.patch > package/network/utils/nftables/patches/0001-nftables-add-fullcone-expression-support.patch
-curl -s $mirror/openwrt/patch/firewall4/nftables/0002-nftables-add-brcm-fullconenat-support.patch > package/network/utils/nftables/patches/0002-nftables-add-brcm-fullconenat-support.patch
-curl -s $mirror/openwrt/patch/firewall4/nftables/0003-drop-rej-file.patch > package/network/utils/nftables/patches/0003-drop-rej-file.patch
+# Patch FireWall 4
+if [ "$version" = "dev" ] || [ "$version" = "rc2" ]; then
+    # firewall4
+    sed -i 's|$(PROJECT_GIT)/project|https://github.com/openwrt|g' package/network/config/firewall4/Makefile
+    mkdir -p package/network/config/firewall4/patches
+    # fix ct status dnat
+    curl -s $mirror/openwrt/patch/firewall4/firewall4_patches/990-unconditionally-allow-ct-status-dnat.patch > package/network/config/firewall4/patches/990-unconditionally-allow-ct-status-dnat.patch
+    # fullcone
+    curl -s $mirror/openwrt/patch/firewall4/firewall4_patches/999-01-firewall4-add-fullcone-support.patch > package/network/config/firewall4/patches/999-01-firewall4-add-fullcone-support.patch
+    # bcm fullcone
+    curl -s $mirror/openwrt/patch/firewall4/firewall4_patches/999-02-firewall4-add-bcm-fullconenat-support.patch > package/network/config/firewall4/patches/999-02-firewall4-add-bcm-fullconenat-support.patch
+    # kernel version
+    curl -s $mirror/openwrt/patch/firewall4/firewall4_patches/002-fix-fw4.uc-adept-kernel-version-type-of-x.x.patch > package/network/config/firewall4/patches/002-fix-fw4.uc-adept-kernel-version-type-of-x.x.patch
+    # fix flow offload
+    curl -s $mirror/openwrt/patch/firewall4/firewall4_patches/001-fix-fw4-flow-offload.patch > package/network/config/firewall4/patches/001-fix-fw4-flow-offload.patch
+    # add custom nft command support
+    curl -s $mirror/openwrt/patch/firewall4/100-openwrt-firewall4-add-custom-nft-command-support.patch | patch -p1
+    # libnftnl
+    mkdir -p package/libs/libnftnl/patches
+    curl -s $mirror/openwrt/patch/firewall4/libnftnl/0001-libnftnl-add-fullcone-expression-support.patch > package/libs/libnftnl/patches/0001-libnftnl-add-fullcone-expression-support.patch
+    curl -s $mirror/openwrt/patch/firewall4/libnftnl/0002-libnftnl-add-brcm-fullcone-support.patch > package/libs/libnftnl/patches/0002-libnftnl-add-brcm-fullcone-support.patch
+    # nftables
+    mkdir -p package/network/utils/nftables/patches
+    curl -s $mirror/openwrt/patch/firewall4/nftables/0001-nftables-add-fullcone-expression-support.patch > package/network/utils/nftables/patches/0001-nftables-add-fullcone-expression-support.patch
+    curl -s $mirror/openwrt/patch/firewall4/nftables/0002-nftables-add-brcm-fullconenat-support.patch > package/network/utils/nftables/patches/0002-nftables-add-brcm-fullconenat-support.patch
+    curl -s $mirror/openwrt/patch/firewall4/nftables/0003-drop-rej-file.patch > package/network/utils/nftables/patches/0003-drop-rej-file.patch
+fi
 
 # FullCone module
 git clone https://$gitea/sbwml/nft-fullcone package/new/nft-fullcone
@@ -175,8 +225,10 @@ popd
 sed -i "/-openwrt/iOPENSSL_OPTIONS += enable-ktls '-DDEVRANDOM=\"\\\\\"/dev/urandom\\\\\"\"\'\n" package/libs/openssl/Makefile
 
 # openssl - lto
-sed -i "s/ no-lto//g" package/libs/openssl/Makefile
-sed -i "/TARGET_CFLAGS +=/ s/\$/ -ffat-lto-objects/" package/libs/openssl/Makefile
+if [ "$ENABLE_LTO" = "y" ]; then
+    sed -i "s/ no-lto//g" package/libs/openssl/Makefile
+    sed -i "/TARGET_CFLAGS +=/ s/\$/ -ffat-lto-objects/" package/libs/openssl/Makefile
+fi
 
 # nghttp3
 rm -rf feeds/packages/libs/nghttp3
@@ -193,11 +245,13 @@ git clone https://$github/sbwml/feeds_packages_net_curl feeds/packages/net/curl
 # Docker
 rm -rf feeds/luci/applications/luci-app-dockerman
 git clone https://$gitea/sbwml/luci-app-dockerman -b nft feeds/luci/applications/luci-app-dockerman
-rm -rf feeds/packages/utils/{docker,dockerd,containerd,runc}
-git clone https://$gitea/sbwml/packages_utils_docker feeds/packages/utils/docker
-git clone https://$gitea/sbwml/packages_utils_dockerd feeds/packages/utils/dockerd
-git clone https://$gitea/sbwml/packages_utils_containerd feeds/packages/utils/containerd
-git clone https://$gitea/sbwml/packages_utils_runc feeds/packages/utils/runc
+if [ "$version" = "dev" ] || [ "$version" = "rc2" ]; then
+    rm -rf feeds/packages/utils/{docker,dockerd,containerd,runc}
+    git clone https://$gitea/sbwml/packages_utils_docker feeds/packages/utils/docker
+    git clone https://$gitea/sbwml/packages_utils_dockerd feeds/packages/utils/dockerd
+    git clone https://$gitea/sbwml/packages_utils_containerd feeds/packages/utils/containerd
+    git clone https://$gitea/sbwml/packages_utils_runc feeds/packages/utils/runc
+fi
 
 # cgroupfs-mount
 # fix unmount hierarchical mount
@@ -215,8 +269,8 @@ curl -s $mirror/openwrt/patch/cgroupfs-mount/902-mount-sys-fs-cgroup-systemd-for
 sed -i 's/enable-skill/enable-skill --disable-modern-top/g' feeds/packages/utils/procps-ng/Makefile
 
 # TTYD
-#sed -i 's/services/system/g' feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json
-#sed -i '3 a\\t\t"order": 50,' feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json
+sed -i 's/services/system/g' feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json
+sed -i '3 a\\t\t"order": 50,' feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json
 sed -i 's/procd_set_param stdout 1/procd_set_param stdout 0/g' feeds/packages/utils/ttyd/files/ttyd.init
 sed -i 's/procd_set_param stderr 1/procd_set_param stderr 0/g' feeds/packages/utils/ttyd/files/ttyd.init
 
@@ -237,6 +291,9 @@ sed -i '/ubus_parallel_req/a\        ubus_script_timeout 300;' feeds/packages/ne
 # nginx - config
 curl -s $mirror/openwrt/nginx/luci.locations > feeds/packages/net/nginx/files-luci-support/luci.locations
 curl -s $mirror/openwrt/nginx/uci.conf.template > feeds/packages/net/nginx-util/files/uci.conf.template
+
+# netifd
+curl -s $mirror/openwrt/patch/netifd/001-hack-packet_steering-for-nanopi-r76s.patch | patch -p1
 
 # opkg
 mkdir -p package/system/opkg/patches
@@ -272,6 +329,9 @@ popd
 # Luci diagnostics.js
 sed -i "s/openwrt.org/www.qq.com/g" feeds/luci/modules/luci-mod-network/htdocs/luci-static/resources/view/network/diagnostics.js
 
+# luci - disable wireless WPA3
+[ "$platform" = "bcm53xx" ] && sed -i -e '/if (has_ap_sae || has_sta_sae) {/{N;N;N;N;d;}' feeds/luci/modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js
+
 # luci-compat - remove extra line breaks from description
 sed -i '/<br \/>/d' feeds/luci/modules/luci-compat/luasrc/view/cbi/full_valuefooter.htm
 
@@ -298,10 +358,13 @@ curl -so files/root/.bashrc $mirror/openwrt/files/root/.bashrc
 
 # rootfs files
 mkdir -p files/etc/sysctl.d
-#curl -so files/etc/banner $mirror/openwrt/files/etc/banner
 curl -so files/etc/sysctl.d/10-default.conf $mirror/openwrt/files/etc/sysctl.d/10-default.conf
 curl -so files/etc/sysctl.d/15-vm-swappiness.conf $mirror/openwrt/files/etc/sysctl.d/15-vm-swappiness.conf
 curl -so files/etc/sysctl.d/16-udp-buffer-size.conf $mirror/openwrt/files/etc/sysctl.d/16-udp-buffer-size.conf
+if [ "$platform" = "bcm53xx" ]; then
+    mkdir -p files/etc/hotplug.d/block
+    curl -so files/etc/hotplug.d/block/20-usbreset $mirror/openwrt/files/etc/hotplug.d/block/20-usbreset
+fi
 
 # NTP
 sed -i 's/0.openwrt.pool.ntp.org/ntp1.aliyun.com/g' package/base-files/files/bin/config_generate
@@ -312,8 +375,3 @@ sed -i 's/3.openwrt.pool.ntp.org/time2.cloud.tencent.com/g' package/base-files/f
 # luci-theme-bootstrap
 sed -i 's/font-size: 13px/font-size: 14px/g' feeds/luci/themes/luci-theme-bootstrap/htdocs/luci-static/bootstrap/cascade.css
 sed -i 's/9.75px/10.75px/g' feeds/luci/themes/luci-theme-bootstrap/htdocs/luci-static/bootstrap/cascade.css
-
-# Custom firmware version and author metadata
-sed -i "s/DISTRIB_DESCRIPTION='*.*'/DISTRIB_DESCRIPTION='%D %V $(date +"%Y%m%d%H")'/g"  package/base-files/files/etc/openwrt_release
-sed -i "s/DISTRIB_REVISION='*.*'/DISTRIB_REVISION=''/g" package/base-files/files/etc/openwrt_release
-sed -i "s|^OPENWRT_RELEASE=\".*\"|OPENWRT_RELEASE=\"%D %V $(date +"%Y%m%d%H")\"|" package/base-files/files/usr/lib/os-release
